@@ -1,6 +1,6 @@
 use std::env;
 
-use regex::Regex;
+use regex::{Captures, Regex};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ struct DocumentProperties {
 #[tokio::main]
 async fn main() {
     println!("{} - {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
-    
+
     let document_id: i32 = env::var("DOCUMENT_ID")
         .expect("DOCUMENT_ID environment variable is not set")
         .parse()
@@ -65,16 +65,29 @@ async fn main() {
         .await
         .expect("unable to parse document data");
 
-    println!("document properties for document {document_id}: {:#?}", document_data);
+    println!(
+        "document properties for document {document_id}: {:#?}",
+        document_data
+    );
+
+    let date_parts: Captures;
 
     // match title for ISO date
-    let iso_pattern =
-        Regex::new(r"^(?<year>[0-9]{4})-(?<month>[0-9]{2})-(?<day>[0-9]{2})\s+-\s+").unwrap();
+    let iso_date_pattern =
+        Regex::new(r"^(?<year>[0-9]{4})-(?<month>[0-9]{2})-(?<day>[0-9]{2})\s*-?\s*").unwrap();
 
-    let Some(date_parts) = iso_pattern.captures(&document_data.title) else {
-        println!("did not find any date at the beginning of document title, nothing to do");
+    // match title for German
+    let german_date_pattern =
+        Regex::new(r"^(?<day>[0-9]{2})\.(?<month>[0-9]{2})\.(?<year>[0-9]{4})\s*-?\s*").unwrap();
+
+    if let Some(matches) = iso_date_pattern.captures(&document_data.title) {
+        date_parts = matches;
+    } else if let Some(matches) = german_date_pattern.captures(&document_data.title) {
+        date_parts = matches;
+    } else {
+        println!("no date match found - nothing to do");
         return;
-    };
+    }
 
     let new_document_title = &document_data.title[date_parts[0].len()..];
 
@@ -87,7 +100,10 @@ async fn main() {
         ),
     };
 
-    println!("new document properties for document {document_id}: {:#?}", new_document_data);
+    println!(
+        "new document properties for document {document_id}: {:#?}",
+        new_document_data
+    );
 
     let response = client
         .patch(&request_url)
