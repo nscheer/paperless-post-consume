@@ -1,8 +1,9 @@
 use std::env;
 
-use regex::{Captures, Regex};
+use regex::Regex;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use lazy_static;
 
 const PAPERLESS_API_URL_DEFAULT: &str = "http://localhost:8000/api/";
 
@@ -10,6 +11,15 @@ const PAPERLESS_API_URL_DEFAULT: &str = "http://localhost:8000/api/";
 struct DocumentProperties {
     title: String,
     created_date: String,
+}
+
+lazy_static::lazy_static! {
+    static ref DATE_PATTERNS: [Regex; 2] = [
+        // match title for ISO date
+        Regex::new(r"^(?<year>[0-9]{4})-(?<month>[0-9]{2})-(?<day>[0-9]{2})\s*-?\s*").unwrap(),
+        // match title for German
+        Regex::new(r"^(?<day>[0-9]{2})\.(?<month>[0-9]{2})\.(?<year>[0-9]{4})\s*-?\s*").unwrap(),
+    ];
 }
 
 #[tokio::main]
@@ -70,24 +80,14 @@ async fn main() {
         document_data
     );
 
-    let date_parts: Captures;
+    let matches = DATE_PATTERNS
+        .iter()
+        .find_map(|pattern| pattern.captures(&document_data.title));
 
-    // match title for ISO date
-    let iso_date_pattern =
-        Regex::new(r"^(?<year>[0-9]{4})-(?<month>[0-9]{2})-(?<day>[0-9]{2})\s*-?\s*").unwrap();
-
-    // match title for German
-    let german_date_pattern =
-        Regex::new(r"^(?<day>[0-9]{2})\.(?<month>[0-9]{2})\.(?<year>[0-9]{4})\s*-?\s*").unwrap();
-
-    if let Some(matches) = iso_date_pattern.captures(&document_data.title) {
-        date_parts = matches;
-    } else if let Some(matches) = german_date_pattern.captures(&document_data.title) {
-        date_parts = matches;
-    } else {
+    let Some(date_parts) = matches else {
         println!("no date match found - nothing to do");
         return;
-    }
+    };
 
     let new_document_title = &document_data.title[date_parts[0].len()..];
 
